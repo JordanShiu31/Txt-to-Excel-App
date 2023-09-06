@@ -1,0 +1,1 @@
+txt_final_folder_path_string.get()
