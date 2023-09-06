@@ -3,7 +3,6 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import shutil
-
 #-----------------------------------------------------#
 # ---------- Create the application window ---------- #
 #-----------------------------------------------------#
@@ -16,6 +15,7 @@ selected_worksheet_names = []
 scenario_state = []
 scenario_years = []
 scenario_period = []
+event_enabled = True
 
 #-----------------------------------------------------#
 # ---------- Functions to operate the GUI  ---------- #
@@ -23,55 +23,82 @@ scenario_period = []
 #-------------------------------------------------------------------------------------------#
 ## Functions for TEXTBOX Widget
 
-def update_txt_files(curr_listbox, functionality):
+def input_to_list(input_word):
+    new_list = []
+    temp_list = input_word.split(",")
+    for word in temp_list:
+        new_list.append(word.strip().upper())
+    return new_list
 
+def update_txt_files(curr_listbox, functionality):
+    replacing_dict = {}
     root_directory_path = txt_root_directory_entry.get().upper()
     common_file_name = txt_result_file_names_entry.get().upper()
     existing_word = txt_exisitng_name_entry.get().upper()
     replacing_word = txt_replacing_name_entry.get().upper()
     destination_path = txt_final_folder_path_entry.get().upper()
 
+    existing_word = input_to_list(existing_word)
+    replacing_word = input_to_list(replacing_word)
+
+    # adds list of existing/replacing words to a dict
+    if len(existing_word) == len(replacing_word) and functionality == "UPDATE TXT":
+        for index, key in enumerate(existing_word):
+            replacing_dict.update({key:replacing_word[index]})
+    elif functionality == "SHOW TXT":
+        pass
+    else:
+        messagebox.showerror("Error", f"The list size: {existing_word} is different to {replacing_word}")
+        return
+    
     count = 0
     no_file_updated = 0
 
     if os.path.exists(root_directory_path):
-        print("works")
         list_of_found_txt = read_files_from_folders(root_directory_path, common_file_name)
         if len(list_of_found_txt[0]) == 0:
             messagebox.showerror("Error", f"No files ending with {common_file_name} was found in {root_directory_path}!\nPlease check the entered path name")
         elif functionality == "SHOW TXT":
-            if not os.path.exists(destination_path):
-                messagebox.showerror("Error", f"The path: {destination_path} does not exist!\nPlease enter an exisiting folder")
-            else:
-                txt_show_updated_button.config(state=tk.NORMAL)
-                update_listbox(list_of_found_txt[1], curr_listbox)
+            # if not os.path.exists(destination_path):
+            #     messagebox.showerror("Error", f"The path: {destination_path} does not exist!\nPlease enter an exisiting folder")
+            # else:
+            txt_show_updated_button.config(state=tk.NORMAL)
+            update_listbox(list_of_found_txt[1], curr_listbox)
         elif functionality == "UPDATE TXT":
             for filename in list_of_found_txt[1]:
-                if existing_word in filename:
-                    count+=1
+                for key, value in replacing_dict.items():
+                    if key in filename:
+                        count+=1
             if count < 1:
-                messagebox.showerror("Error", f"The word: {existing_word} cannot be found in TXT filest!\nPlease enter an exisiting word")
+                messagebox.showerror("Error", f"The word(s): {existing_word} cannot be found in TXT filest!\nPlease enter an exisiting word")
             else:
+                txt_delete_new_files_button.config(state=tk.NORMAL)
                 for curr_path_name, curr_file_name in zip(list_of_found_txt[0],list_of_found_txt[1]):
-                    if existing_word in curr_file_name:
-                        cap_name = curr_file_name.upper()
-                        new_file_name = cap_name.replace(existing_word, replacing_word)
-                        final_destination_path = os.path.join(destination_path, new_file_name)
-                        shutil.copy(curr_path_name, final_destination_path)
-                        no_file_updated+=1
+                    new_file_name = curr_file_name.upper()
+                    for key, value in replacing_dict.items(): 
+                        if key in curr_file_name:
+                            new_file_name = new_file_name.replace(key, value)
+                    final_destination_path = os.path.join(destination_path, new_file_name)
+                    shutil.copy(curr_path_name, final_destination_path)
+                    no_file_updated+=1
                 new_file_list = read_files_from_folders(destination_path, common_file_name)
                 update_listbox(new_file_list[2], curr_listbox)
                 messagebox.showinfo("Success!",f"{no_file_updated} has been updated")
     else:
         messagebox.showerror("Error", "Incorrect Folder Directory!\nPlease check the entered path name")
-    
+
 def browse(cur_stringvar, is_dir=True):
+    print(cur_stringvar.get())
     if is_dir:
         file_path = filedialog.askdirectory()
     else:
-        file_path= filedialog.askopenfilename()
+        file_path= filedialog.askopenfilename(filetypes=[("Excel Files", "*.xls;*.xlsx")])
     if file_path:
-       cur_stringvar.set(file_path)
+        print("it should work and replace")
+        global event_enabled
+        event_enabled = False
+        cur_stringvar.set(file_path)
+
 
 ## Removes white spaces and seperates each line to a list
 def convert_string_to_list(curr_list, curr_text, button, button_name):
@@ -105,6 +132,16 @@ def scenario_param_button_text_update(textbox_list_items, button, button_var_nam
 #-------------------------------------------------------------------------------------------#
 
 #-------------------------------------------------------------------------------------------#
+def delete_selected_listbox_items(curr_listbox):
+    selected_indices = curr_listbox.curselection() # 
+    # assumes windows will always read in order (might be diff for other systems)
+    for index, file in enumerate(os.listdir(txt_final_folder_path_string.get())):
+        if index in selected_indices:
+            file_path = os.path.join(txt_final_folder_path_string.get(), file)
+            os.remove(file_path)
+    for index in selected_indices[::-1]:
+        curr_listbox.delete(index)
+
 ## Returns a list of selected tab names
 def get_selected_listbox_items(curr_listbox):
     selected_indices = curr_listbox.curselection() # 
@@ -174,8 +211,13 @@ def read_files_from_folders(root_directory, common_ending_file_name, check_same_
     list_raw_file_name = []
     list_raw_dest_files = []
     list_raw_path_and_name = []
-    for file in os.listdir(txt_final_folder_path_string.get()):
-            list_raw_dest_files.append(file.upper())     
+
+    try:
+        for file in os.listdir(txt_final_folder_path_string.get()):
+            list_raw_dest_files.append(file.upper())
+    except OSError:
+        messagebox.showerror("Error", f"The path: {txt_final_folder_path_string.get()} does not exist!\nPlease enter an exisiting folder")
+        return
     for root, _, files in os.walk(root_directory):
         if os.path.basename(root.upper()) == os.path.basename(txt_final_folder_path_string.get().upper()) and check_same_dir:
             pass
@@ -237,7 +279,7 @@ def update_func(curr_listbox):
     excel_path = excel_string.get()
     root_directory_path = root_directory_entry.get()
     caps_root_directory_path = root_directory_path.upper()
-    common_ending_file_name = raw_results_string.get()
+    common_ending_file_name = txt_result_file_names_string.get()
     delimiter = delimiter_entry.get()
     selected_worksheet_names = get_selected_listbox_items(curr_listbox)
     workbook = op.load_workbook(excel_path)
@@ -255,7 +297,7 @@ def update_func(curr_listbox):
                 worksheet_active = workbook[worksheet_name]
                 keywords_list = find_worksheet_key_words(worksheet_name)
                 if len(keywords_list) >= 3:
-                    desired_path_file = find_txt_file(keywords_list, raw_data_files_list)
+                    desired_path_file = find_txt_file(keywords_list, raw_data_files_list)             
                     if desired_path_file == False:
                         messagebox.showerror("Error", f"raw data file could not be found! for:\n {worksheet_name}")
                         unselected_worksheets.append(worksheet_name)
@@ -330,7 +372,7 @@ txt_updated_error_msg = tk.StringVar(value="Click below to verify updated files"
 txt_existing_file_label = ttk.Label(txt_display_existing_frame, textvariable=txt_existing_error_msg)
 txt_updated_file_label = ttk.Label(txt_display_updated_frame, textvariable=txt_updated_error_msg)
 txt_exisitng_path_name_listbox = tk.Listbox(txt_display_existing_frame)
-txt_updated_path_name_listbox = tk.Listbox(txt_display_updated_frame)
+txt_updated_path_name_listbox = tk.Listbox(txt_display_updated_frame, selectmode=tk.EXTENDED)
 
 # Entry Widgets
 entry_width = 100
@@ -345,7 +387,7 @@ txt_root_dir_browse_button = tk.Button(txt_path_files_entry_button_frame, text="
 txt_dest_dir_browse_button = tk.Button(txt_path_files_entry_button_frame, text="Browse Destination", width=20, command=lambda:browse(txt_final_folder_path_string))
 txt_show_existing_button = ttk.Button(txt_display_existing_frame, text="Show exisitng txt file names", command=lambda:update_txt_files(txt_exisitng_path_name_listbox, "SHOW TXT"))
 txt_show_updated_button = ttk.Button(txt_display_updated_frame, text="Show updated txt file names", command=lambda:update_txt_files(txt_updated_path_name_listbox, "UPDATE TXT"), state=tk.DISABLED)
-
+txt_delete_new_files_button = ttk.Button(txt_display_updated_frame, text="Delete selected txt file", command=lambda:delete_selected_listbox_items(txt_updated_path_name_listbox), state=tk.DISABLED)
 # -------------------------------------------------------------------------------------------#
 # Adding widgets into the window
 
@@ -368,6 +410,7 @@ txt_exisitng_name_label.pack(side='top', fill="both", expand=True, padx=xpad)
 txt_replacing_name_label.pack(side='top', fill="both", expand=True, padx=xpad)
 txt_final_folder_path_label.pack(side='top', fill="both", expand=True, padx=xpad)
 
+
 txt_root_directory_entry.pack(side='top', fill="both", expand=True, padx=xpad, pady=ypad)
 txt_result_file_names_entry.pack(side='top', fill="both", expand=True, padx=xpad, pady=ypad)
 txt_exisitng_name_entry.pack(side='top', fill="both", expand=True, padx=xpad, pady=ypad)
@@ -384,9 +427,9 @@ txt_updated_file_label.pack(side='top', fill="both", expand=False, padx=xpad)
 txt_updated_file_label.config(anchor="center")
 txt_show_existing_button.pack(side='top', fill="both", expand=False, padx=xpad, pady=10)
 txt_show_updated_button.pack(side='top', fill="both", expand=False, padx=xpad, pady=10) 
-txt_exisitng_path_name_listbox.pack(side='top', fill="both", expand=True, padx=xpad, pady=10)
-txt_updated_path_name_listbox.pack(side='top', fill="both", expand=True, padx=xpad, pady=10)
-
+txt_exisitng_path_name_listbox.pack(side='top', fill="both", expand=True, padx=xpad, pady=(5,1))
+txt_updated_path_name_listbox.pack(side='top', fill="both", expand=True, padx=xpad, pady=5)
+txt_delete_new_files_button.pack(side='top', fill="both", expand=False, padx=xpad) 
 # ---------- tabs 2 Widgets  ---------- #
 
 # 2. Creates subframes inside fame above to allow grouping of other widgets
@@ -420,7 +463,7 @@ scenario_period_label = tk.Label(scenario_period_frame, text="Select Scenario Pe
 # 4. Creates pre-defined messages in the user input entries to give directions
 excel_string = tk.StringVar(value='Enter full excel path file with no "" marks')
 # root_string = tk.StringVar(value='Please enter full folder path file cotaining all results with no "" marks')
-raw_results_string = tk.StringVar(value="Enter a common results file name. eg.Node Results.att")
+# raw_results_string = tk.StringVar(value="Enter a common results file name. eg.Node Results.att")
 delimiter_string = tk.StringVar(value="Enter a delimiter to seperate the results")
 
 # 5. Creates a listbox widget which will display exisitng excel tabs from user input
@@ -431,7 +474,7 @@ scenario_period_input_listbox = tk.Listbox(scenario_period_frame, selectmode="mu
 entry_width = 50
 excel_path_entry = ttk.Entry(path_files_entry_frame, textvariable=excel_string, width=entry_width)
 root_directory_entry = ttk.Entry(path_files_entry_frame, textvariable=txt_final_folder_path_string, width=entry_width)
-result_file_names_entry = ttk.Entry(path_files_entry_frame, textvariable=raw_results_string, width=entry_width)
+result_file_names_entry = ttk.Entry(path_files_entry_frame, textvariable=txt_result_file_names_string, width=entry_width)
 delimiter_entry = ttk.Entry(path_files_entry_frame, textvariable=delimiter_string, width=entry_width)
 
 # 7. Creates a text box for user to add 
@@ -488,6 +531,7 @@ excel_path_entry.pack(side='top', fill="both", pady=ypad)
 root_directory_entry.pack(side='top', fill="both", pady=ypad)
 result_file_names_entry.pack(side='top', fill="both", pady=ypad)
 delimiter_entry.pack(side='top', fill="both", pady=ypad)
+
 
 root_dir_browse_button.pack(side='top', expand=False, pady=18)
 dest_dir_browse_button.pack(side='top', expand=False, pady=18)
